@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Palletizer Formula Calculator</title>
+  <style>
+    body { 
+      font-family: Arial, sans-serif; 
+      margin: 20px; 
+      background: #D0DEE2;
+    }
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+    .header img {
+      max-height: 50px;
+    }
+    fieldset { 
+      margin-bottom: 15px; 
+      padding: 10px;
+      border: 1px solid #ccc;
+    }
+    label { 
+      display: block; 
+      margin-bottom: 5px; 
+    }
+    input, select {
+      width: 200px; 
+      padding: 5px; 
+      margin-bottom: 10px;
+    }
+    #result {
+      margin-top: 20px; 
+      padding: 10px; 
+      border: 1px solid #ccc;
+    }
+  </style>
+</head>
+<body>
+  <!-- Header with Title and Epicor Logo -->
+  <div class="header">
+    <h1>Palletizer Formula Calculator</h1>
+    <img src="https://i.postimg.cc/nhksgT0K/Epicor-Logo-Teal-Background-Light-Blue.jpg" alt="Epicor Logo" />
+  </div>
+
+  <!-- Hidden authentication fields -->
+  <input type="hidden" id="api_key" value="cbwKcxxaLgJN41c1cI4fICYiZAGl2EuF142cYsJSIjc2g">
+  <input type="hidden" id="username" value="epicor">
+  <input type="hidden" id="password" value="epicor">
+  
+  <!-- Hidden constant fields for company and plant -->
+  <input type="hidden" id="company" value="EPIC03">
+  <input type="hidden" id="plant" value="MFGSYS">
+
+  <!-- Manual Inputs for Data Fetch -->
+  <h2>ERP Data Fetch</h2>
+  <form id="erpForm">
+    <fieldset>
+      <legend>Manual Inputs for Data Fetch</legend>
+      <label>Customer Shipment #: 
+        <input type="text" id="customer_shipment" placeholder="e.g., 251" required>
+      </label>
+      <label>Pack Line: 
+        <input type="text" id="pack_line" placeholder="e.g., 1" required>
+      </label>
+    </fieldset>
+    <button type="button" onclick="fetchERPData()">Fetch ERP Data</button>
+  </form>
+
+  <!-- Section for Auto-Filled Data -->
+  <div id="autoData">
+    <h2>Auto-Filled Data from ERP</h2>
+    <fieldset>
+      <legend>Pallet Specifications (in feet)</legend>
+      <label>Pallet Length (feet): 
+        <input type="number" id="pallet_length" readonly>
+      </label>
+      <label>Pallet Width (feet): 
+        <input type="number" id="pallet_width" readonly>
+      </label>
+      <label>Pallet Max Height (feet): 
+        <input type="number" id="pallet_max_height" readonly>
+      </label>
+      <label>Pallet Tare Weight (lbs): 
+        <input type="number" id="pallet_tare_weight" value="50" readonly>
+      </label>
+      <label>Pallet Max Weight Capacity (lbs): 
+        <input type="number" id="pallet_max_weight_capacity" value="1050" readonly>
+      </label>
+    </fieldset>
+    <fieldset>
+      <legend>Shipping Line Details</legend>
+      <label>Part Quantity: 
+        <input type="number" id="part_quantity" readonly>
+      </label>
+      <!-- PartNum stored in a hidden field for later use -->
+      <input type="hidden" id="part_num">
+    </fieldset>
+    <fieldset>
+      <legend>Part Box Details (in inches and lbs)</legend>
+      <label>Part Box Length (in): 
+        <input type="number" id="part_box_length" readonly>
+      </label>
+      <label>Part Box Width (in): 
+        <input type="number" id="part_box_width" readonly>
+      </label>
+      <label>Part Box Height (in): 
+        <input type="number" id="part_box_height" readonly>
+      </label>
+      <label>Part Weight (lbs): 
+        <input type="number" id="part_weight" readonly>
+      </label>
+    </fieldset>
+    <fieldset>
+      <legend>Stacking Preferences</legend>
+      <label>Preferred Stacking Pattern:
+        <select id="stacking_pattern">
+          <option value="Auto-optimized" selected>Auto-optimized</option>
+          <option value="Column">Column</option>
+          <option value="Interlocking">Interlocking</option>
+        </select>
+      </label>
+    </fieldset>
+  </div>
+
+  <!-- Button to perform final calculation -->
+  <button type="button" onclick="calculate()">Calculate</button>
+  
+  <div id="result"></div>
+
+  <script>
+    // Function to fetch ERP data via REST API calls using X-API-Key and Basic Auth
+    async function fetchERPData() {
+      // Retrieve manual inputs and hidden credentials
+      const apiKey = document.getElementById("api_key").value.trim();
+      const username = document.getElementById("username").value.trim();
+      const password = document.getElementById("password").value.trim();
+      const customerShipment = document.getElementById("customer_shipment").value.trim();
+      const packLine = document.getElementById("pack_line").value.trim();
+      const company = document.getElementById("company").value; // e.g., "EPIC03"
+      
+      // Create Basic Authentication header value
+      const basicAuth = "Basic " + btoa(username + ":" + password);
+      
+      // Prepare request headers including X-API-Key and Basic Auth
+      const headers = {
+        'X-API-Key': apiKey,
+        'Authorization': basicAuth,
+        'Content-Type': 'application/json'
+      };
+      
+      try {
+        // --- 1. Get Pallet Specifications from CustShips ---
+        const palletUrl = `https://seiajrf5bc.developer.epicor.com/server/api/v2/odata/${company}/Erp.BO.CustShipSvc/CustShips('${company}',${customerShipment})?$select=PkgLength,PkgWidth,PkgHeight`;
+        console.log("Fetching Pallet Specs from:", palletUrl);
+        const palletResponse = await fetch(palletUrl, { headers });
+        if (!palletResponse.ok) {
+          throw new Error("Error fetching Pallet Specifications: " + palletResponse.statusText);
+        }
+        const palletData = await palletResponse.json();
+        document.getElementById("pallet_length").value = palletData.PkgLength || "";
+        document.getElementById("pallet_width").value = palletData.PkgWidth || "";
+        document.getElementById("pallet_max_height").value = palletData.PkgHeight || "";
+        
+        // --- 2. Get Shipping Line Details from ShipDtls ---
+        const shipUrl = `https://seiajrf5bc.developer.epicor.com/server/api/v2/odata/${company}/Erp.BO.CustShipSvc/ShipDtls('${company}',${customerShipment},${packLine})?$select=PartNum,SellingReqQty`;
+        console.log("Fetching Shipping Details from:", shipUrl);
+        const shipResponse = await fetch(shipUrl, { headers });
+        if (!shipResponse.ok) {
+          throw new Error("Error fetching Shipping Line Details: " + shipResponse.statusText);
+        }
+        const shipData = await shipResponse.json();
+        const partNum = shipData.PartNum || "";
+        document.getElementById("part_num").value = partNum;
+        document.getElementById("part_quantity").value = shipData.SellingReqQty || "";
+        
+        // --- 3. Get Part Box Details from Parts ---
+        const partUrl = `https://seiajrf5bc.developer.epicor.com/server/api/v2/odata/${company}/Erp.BO.PartSvc/Parts('${company}','${partNum}')?$select=PartLength,PartWidth,PartHeight,GrossWeight`;
+        console.log("Fetching Part Box Details from:", partUrl);
+        const partResponse = await fetch(partUrl, { headers });
+        if (!partResponse.ok) {
+          throw new Error("Error fetching Part Box Details: " + partResponse.statusText);
+        }
+        const partData = await partResponse.json();
+        document.getElementById("part_box_length").value = partData.PartLength || "";
+        document.getElementById("part_box_width").value = partData.PartWidth || "";
+        document.getElementById("part_box_height").value = partData.PartHeight || "";
+        document.getElementById("part_weight").value = partData.GrossWeight || "";
+        
+        alert("ERP Data successfully fetched and auto-filled.");
+      } catch (error) {
+        console.error(error);
+        alert(error.message);
+      }
+    }
+    
+    // Function to perform the palletization calculation
+    function calculate() {
+      const partBoxLength = parseFloat(document.getElementById("part_box_length").value);
+      const partBoxWidth = parseFloat(document.getElementById("part_box_width").value);
+      const partBoxHeight = parseFloat(document.getElementById("part_box_height").value);
+      const partWeight = parseFloat(document.getElementById("part_weight").value);
+      const partQuantity = parseInt(document.getElementById("part_quantity").value, 10);
+      
+      const palletLengthFeet = parseFloat(document.getElementById("pallet_length").value);
+      const palletWidthFeet = parseFloat(document.getElementById("pallet_width").value);
+      const palletMaxHeightFeet = parseFloat(document.getElementById("pallet_max_height").value);
+      const palletTareWeight = parseFloat(document.getElementById("pallet_tare_weight").value);
+      const palletMaxWeightCapacity = parseFloat(document.getElementById("pallet_max_weight_capacity").value);
+      
+      // Convert feet to inches
+      const palletLength = palletLengthFeet * 12;
+      const palletWidth = palletWidthFeet * 12;
+      const palletMaxHeight = palletMaxHeightFeet * 12;
+      
+      const stackingPattern = document.getElementById("stacking_pattern").value;
+      
+      const normalCols = Math.floor(palletLength / partBoxLength);
+      const normalRows = Math.floor(palletWidth / partBoxWidth);
+      const normalBoxes = normalCols * normalRows;
+      
+      const rotatedCols = Math.floor(palletLength / partBoxWidth);
+      const rotatedRows = Math.floor(palletWidth / partBoxLength);
+      const rotatedBoxes = rotatedCols * rotatedRows;
+      
+      let boxesPerLayer;
+      if (stackingPattern === "Column") {
+        boxesPerLayer = normalBoxes;
+      } else if (stackingPattern === "Interlocking") {
+        boxesPerLayer = Math.floor(Math.max(normalBoxes, rotatedBoxes) * 1.1);
+      } else {
+        boxesPerLayer = Math.max(normalBoxes, rotatedBoxes);
+      }
+      
+      const layers = Math.floor(palletMaxHeight / partBoxHeight);
+      const capacityBySpace = boxesPerLayer * layers;
+      const capacityByWeight = Math.floor((palletMaxWeightCapacity - palletTareWeight) / partWeight);
+      const effectiveCapacity = Math.min(capacityBySpace, capacityByWeight);
+      const recommendedPallets = effectiveCapacity > 0 ? Math.ceil(partQuantity / effectiveCapacity) : 0;
+      
+      document.getElementById("result").innerHTML = `
+        <h2>Calculation Results</h2>
+        <p>Boxes per layer: ${boxesPerLayer}</p>
+        <p>Number of layers possible: ${layers}</p>
+        <p>Capacity by space: ${capacityBySpace} boxes</p>
+        <p>Capacity by weight: ${capacityByWeight} boxes</p>
+        <p>Effective capacity per pallet: ${effectiveCapacity} boxes</p>
+        <p>Recommended number of pallets: ${recommendedPallets}</p>
+      `;
+    }
+  </script>
+</body>
+</html>
